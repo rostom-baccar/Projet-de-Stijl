@@ -398,8 +398,7 @@ void Tasks::MoveTask(void *arg) {
 
 void Tasks::CheckBattery(void *arg) {
     int rs;
-    MessageBattery* batteryLevel ; 
-    Message* batteryResponse; 
+    Message* batteryLevel; 
 
     cout << "Start " << __PRETTY_FUNCTION__ << endl << flush;
     
@@ -409,12 +408,11 @@ void Tasks::CheckBattery(void *arg) {
     /**************************************************************************************/
     /* The task starts here                                                               */
     /**************************************************************************************/
-    rt_task_set_periodic(NULL, TM_NOW, 100000000);
+    rt_task_set_periodic(NULL, TM_NOW, 500000000);
 
     while (1) {
         // Wait period
         rt_task_wait_period(NULL);
-        
         cout << "Battery check" << endl;
         
         // Lock mutex
@@ -422,12 +420,16 @@ void Tasks::CheckBattery(void *arg) {
         rs = robotStarted;
         // Unlock mutex
         rt_mutex_release(&mutex_robotStarted);
+        
         if (rs == 1) { 
-            cout << "Reading battery level";
             // Get battery from robot 
+            rt_mutex_acquire(&mutex_robot, TM_INFINITE);
             batteryLevel=robot.Write(robot.GetBattery());
+            rt_mutex_release(&mutex_robot);
+            
+            cout << "Battery Level: " << batteryLevel->ToString() << endl << flush;
             // Display battery level on monitor - write to monitor 
-            cout << "Battery level:" << batteryResponse; 
+            WriteInQueue(&q_messageToMon, batteryLevel);  
         }
         
         
