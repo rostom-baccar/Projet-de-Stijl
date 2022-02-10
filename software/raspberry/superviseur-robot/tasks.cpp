@@ -27,6 +27,7 @@
 #define PRIORITY_TSTARTROBOT 20
 #define PRIORITY_TCAMERA 21
 #define PRIORITY_TCHECKBATTERY 20
+#define PRIORITY_TWATCHDOGUPDATE 20
 
 /*
  * Some remarks:
@@ -74,6 +75,10 @@ void Tasks::Init() {
         cerr << "Error mutex create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
+    if (err = rt_mutex_create(&mutex_watchdogMode, NULL)) {
+        cerr << "Error mutex create: " << strerror(-err) << endl << flush;
+        exit(EXIT_FAILURE);
+    }
     cout << "Mutexes created successfully" << endl << flush;
 
     /**************************************************************************************/
@@ -92,6 +97,10 @@ void Tasks::Init() {
         exit(EXIT_FAILURE);
     }
     if (err = rt_sem_create(&sem_startRobot, NULL, 0, S_FIFO)) {
+        cerr << "Error semaphore create: " << strerror(-err) << endl << flush;
+        exit(EXIT_FAILURE);
+    }
+    if (err = rt_sem_create(&sem_watchdogUpdate, NULL, 0, S_FIFO)) {
         cerr << "Error semaphore create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
@@ -191,6 +200,7 @@ void Tasks::Stop() {
 /**
  */
 void Tasks::Join() {
+    //On réveille toutes les tâches en attente 
     cout << "Tasks synchronized" << endl << flush;
     rt_sem_broadcast(&sem_barrier);
     pause();
@@ -272,10 +282,20 @@ void Tasks::ReceiveFromMonTask(void *arg) {
             delete(msgRcv);
             exit(-1);
         } else if (msgRcv->CompareID(MESSAGE_ROBOT_COM_OPEN)) {
-            rt_sem_v(&sem_openComRobot);
+            rt_sem_v(&sem_openComRobot);            
         } else if (msgRcv->CompareID(MESSAGE_ROBOT_START_WITHOUT_WD)) {
+            rt_mutex_acquire(&mutex_watchdogMode, TM_INFINITE);
+            watchdogMode = 0;
+            rt_mutex_release(&mutex_watchdogMode);
             rt_sem_v(&sem_startRobot);
-        } else if (msgRcv->CompareID(MESSAGE_ROBOT_GO_FORWARD) ||
+        //On rajoute la réception de message de démarrage avec watchdog
+        } else if (msgRcv->CompareID(MESSAGE_ROBOT_START_WITH_WD)) {
+            rt_mutex_acquire(&mutex_watchdogMode, TM_INFINITE);
+            watchdogMode = 1;
+            rt_mutex_release(&mutex_watchdogMode);
+            rt_sem_v(&sem_startRobot);
+        } 
+        else if (msgRcv->CompareID(MESSAGE_ROBOT_GO_FORWARD) ||
                 msgRcv->CompareID(MESSAGE_ROBOT_GO_BACKWARD) ||
                 msgRcv->CompareID(MESSAGE_ROBOT_GO_LEFT) ||
                 msgRcv->CompareID(MESSAGE_ROBOT_GO_RIGHT) ||
@@ -285,6 +305,9 @@ void Tasks::ReceiveFromMonTask(void *arg) {
             move = msgRcv->GetID();
             rt_mutex_release(&mutex_move);
         }
+        
+
+        
         delete(msgRcv); // mus be deleted manually, no consumer
     }
 }
@@ -326,6 +349,7 @@ void Tasks::OpenComRobot(void *arg) {
  * @brief Thread starting the communication with the robot.
  */
 void Tasks::StartRobotTask(void *arg) {
+    //On distingue les deux modes de démarrage: sans watchdog et avec watchdog
     cout << "Start " << __PRETTY_FUNCTION__ << endl << flush;
     // Synchronization barrier (waiting that all tasks are starting)
     rt_sem_p(&sem_barrier, TM_INFINITE);
@@ -337,10 +361,29 @@ void Tasks::StartRobotTask(void *arg) {
 
         Message * msgSend;
         rt_sem_p(&sem_startRobot, TM_INFINITE);
+        
+        int wm; //watchdog
+        rt_mutex_acquire(&mutex_watchdogMode, TM_INFINITE);
+        wm = watchdogMode; //selon le msg réceptionné depuis le moniteur
+        rt_mutex_release(&mutex_watchdogMode);
+
+        if (wm==0){
+        
         cout << "Start robot without watchdog (";
         rt_mutex_acquire(&mutex_robot, TM_INFINITE);
         msgSend = robot.Write(robot.StartWithoutWD());
         rt_mutex_release(&mutex_robot);
+        }
+        else if (wm==1){
+        
+        cout << "Start robot with watchdog (";
+        rt_mutex_acquire(&mutex_robot, TM_INFINITE);
+        msgSend = robot.Write(robot.StartWithWD());
+        rt_mutex_release(&mutex_robot);
+            
+        }
+        
+        
         cout << msgSend->GetID();
         cout << ")" << endl;
 
@@ -359,7 +402,7 @@ void Tasks::StartRobotTask(void *arg) {
  * @brief Thread handling control of the robot.
  */
 void Tasks::MoveTask(void *arg) {
-    int rs;
+    int rs; 
     int cpMove;
     
     cout << "Start " << __PRETTY_FUNCTION__ << endl << flush;

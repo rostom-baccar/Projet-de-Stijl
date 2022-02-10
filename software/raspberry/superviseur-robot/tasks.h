@@ -65,6 +65,7 @@ private:
     ComMonitor monitor;
     ComRobot robot;
     int robotStarted = 0;
+    int watchdogMode = 0; //variable indiquant si le mode watchdog est ativé ou non par l'utilisateur
     int move = MESSAGE_ROBOT_STOP;
     
     /**********************************************************************/
@@ -84,6 +85,7 @@ private:
     RT_MUTEX mutex_monitor;
     RT_MUTEX mutex_robot;
     RT_MUTEX mutex_robotStarted;
+    RT_MUTEX mutex_watchdogMode; //mutex pour la variable watchdogStarted
     RT_MUTEX mutex_move;
 
     /**********************************************************************/
@@ -93,6 +95,7 @@ private:
     RT_SEM sem_openComRobot;
     RT_SEM sem_serverOk;
     RT_SEM sem_startRobot;
+    RT_SEM sem_watchdogUpdate;
 
     /**********************************************************************/
     /* Message queues                                                     */
