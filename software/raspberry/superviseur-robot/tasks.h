@@ -78,6 +78,7 @@ private:
     RT_TASK th_startRobot;
     RT_TASK th_move;
     RT_TASK th_checkBattery;
+    RT_TASK th_watchdogReload;
     
     /**********************************************************************/
     /* Mutex                                                              */
@@ -95,7 +96,7 @@ private:
     RT_SEM sem_openComRobot;
     RT_SEM sem_serverOk;
     RT_SEM sem_startRobot;
-    RT_SEM sem_watchdogUpdate;
+    RT_SEM sem_watchdogReload;
 
     /**********************************************************************/
     /* Message queues                                                     */
@@ -141,6 +142,11 @@ private:
     * @brief 
     */
     void CheckBattery(void *arg) ; 
+    
+    /**
+    * @brief 
+    */
+    void WatchdogReload(void *arg) ; 
     
     
     /**********************************************************************/

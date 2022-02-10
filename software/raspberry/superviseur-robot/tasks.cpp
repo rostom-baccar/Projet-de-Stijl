@@ -27,7 +27,7 @@
 #define PRIORITY_TSTARTROBOT 20
 #define PRIORITY_TCAMERA 21
 #define PRIORITY_TCHECKBATTERY 20
-#define PRIORITY_TWATCHDOGUPDATE 20
+#define PRIORITY_TWATCHDOGRELOAD 21
 
 /*
  * Some remarks:
@@ -100,7 +100,7 @@ void Tasks::Init() {
         cerr << "Error semaphore create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
-    if (err = rt_sem_create(&sem_watchdogUpdate, NULL, 0, S_FIFO)) {
+    if (err = rt_sem_create(&sem_watchdogReload, NULL, 0, S_FIFO)) {
         cerr << "Error semaphore create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
@@ -134,6 +134,10 @@ void Tasks::Init() {
         exit(EXIT_FAILURE);
     }
     if (err = rt_task_create(&th_checkBattery, "th_checkBattery", 0, PRIORITY_TCHECKBATTERY, 0)) {
+        cerr << "Error task create: " << strerror(-err) << endl << flush;
+        exit(EXIT_FAILURE);
+    }
+    if (err = rt_task_create(&th_watchdogReload, "th_watchdogUpdate", 0, PRIORITY_TWATCHDOGRELOAD, 0)) {
         cerr << "Error task create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
@@ -182,6 +186,10 @@ void Tasks::Run() {
         exit(EXIT_FAILURE);
     }
     if (err = rt_task_start(&th_checkBattery, (void(*)(void*)) & Tasks::CheckBattery, this)) {
+        cerr << "Error task start: " << strerror(-err) << endl << flush;
+        exit(EXIT_FAILURE);
+    }
+    if (err = rt_task_start(&th_watchdogReload, (void(*)(void*)) & Tasks::WatchdogReload, this)) {
         cerr << "Error task start: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
@@ -367,6 +375,8 @@ void Tasks::StartRobotTask(void *arg) {
         wm = watchdogMode; //selon le msg réceptionné depuis le moniteur
         rt_mutex_release(&mutex_watchdogMode);
 
+        cout << "Watchdog Mode = " << wm;
+        
         if (wm==0){
         
         cout << "Start robot without watchdog (";
@@ -380,6 +390,8 @@ void Tasks::StartRobotTask(void *arg) {
         rt_mutex_acquire(&mutex_robot, TM_INFINITE);
         msgSend = robot.Write(robot.StartWithWD());
         rt_mutex_release(&mutex_robot);
+        //The watchdog reload semaphore is released here, the watchdog reload task can be executed
+        rt_sem_v(&sem_watchdogReload);
             
         }
         
@@ -479,6 +491,43 @@ void Tasks::CheckBattery(void *arg) {
         cout << endl << flush;
     }
 }
+
+    //Task qui met à jour le watchdog périodiquement
+void Tasks::WatchdogReload(void *arg) {
+    
+    int rs;
+    Message * watchdogReload;
+
+    cout << "Start " << __PRETTY_FUNCTION__ << endl << flush;
+    // Synchronization barrier (waiting that all tasks are starting)
+    rt_sem_p(&sem_barrier, TM_INFINITE);
+    
+    //We wait until the watchdog mode is activated to execute this code
+    rt_sem_p(&sem_watchdogReload, TM_INFINITE);
+    
+    rt_task_set_periodic(NULL, TM_NOW, 100000000);
+
+    /**************************************************************************************/
+    /* The task starts here                                                               */
+    /**************************************************************************************/
+    
+    while(1){
+        
+        rt_task_wait_period(NULL);
+        
+        rt_mutex_acquire(&mutex_robotStarted, TM_INFINITE);
+        rs = robotStarted;
+        rt_mutex_release(&mutex_robotStarted);
+        
+        if (rs == 1) { //We make sure the robot is started
+            rt_mutex_acquire(&mutex_robot, TM_INFINITE);
+            watchdogReload = robot.Write(robot.ReloadWD()); //the watchdog is reloaded
+            rt_mutex_release(&mutex_robot);
+        }
+    }     
+}
+
+
 
 
 /**
