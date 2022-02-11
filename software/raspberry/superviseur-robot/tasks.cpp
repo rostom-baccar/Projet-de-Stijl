@@ -255,6 +255,9 @@ void Tasks::SendToMonTask(void* arg) {
     /* The task sendToMon starts here                                                     */
     /**************************************************************************************/
     rt_sem_p(&sem_serverOk, TM_INFINITE);
+    
+    //SEND TO MONITOR EVERY 10MS [FUNCTION 4]
+    rt_task_set_periodic(NULL, TM_NOW, 10000000);
 
     while (1) {
         cout << "wait msg to send" << endl << flush;
@@ -271,6 +274,7 @@ void Tasks::SendToMonTask(void* arg) {
  */
 void Tasks::ReceiveFromMonTask(void *arg) {
     Message *msgRcv;
+    int status;
     
     cout << "Start " << __PRETTY_FUNCTION__ << endl << flush;
     // Synchronization barrier (waiting that all tasks are starting)
@@ -287,17 +291,40 @@ void Tasks::ReceiveFromMonTask(void *arg) {
         cout << "Rcv <= " << msgRcv->ToString() << endl << flush;
 
         if (msgRcv->CompareID(MESSAGE_MONITOR_LOST)) {
+            
+            //CONNECTION WITH MONITOR IS LOST [FUNCTION 5]
+            cout << "Connection with monitor is lost";
+            
+            //STOP ROBOT [FUNCTION 6]        
+            rt_mutex_acquire(&mutex_move, TM_INFINITE);
+            move = MESSAGE_ROBOT_STOP;
+            rt_mutex_release(&mutex_move);
+            
+            //CLOSE COMMUNICATION WITH ROBOT [FUNCTION 6]
+            rt_mutex_acquire(&mutex_robot, TM_INFINITE);
+            status = robot.Close();
+            rt_mutex_release(&mutex_robot);
+            
+            //STOP SERVER [FUNCTION 6]
+            rt_mutex_acquire(&mutex_monitor, TM_INFINITE);
+            monitor.Close();
+            rt_mutex_release(&mutex_monitor);
+            
+            
             delete(msgRcv);
             exit(-1);
         } else if (msgRcv->CompareID(MESSAGE_ROBOT_COM_OPEN)) {
+            cout << "Requesting communication with Robot";
             rt_sem_v(&sem_openComRobot);            
         } else if (msgRcv->CompareID(MESSAGE_ROBOT_START_WITHOUT_WD)) {
+            cout << "Telling robot to start without watchdog";
             rt_mutex_acquire(&mutex_watchdogMode, TM_INFINITE);
             watchdogMode = 0;
             rt_mutex_release(&mutex_watchdogMode);
             rt_sem_v(&sem_startRobot);
         //On rajoute la réception de message de démarrage avec watchdog
         } else if (msgRcv->CompareID(MESSAGE_ROBOT_START_WITH_WD)) {
+            cout << "Telling robot to start in watchdog mode";
             rt_mutex_acquire(&mutex_watchdogMode, TM_INFINITE);
             watchdogMode = 1;
             rt_mutex_release(&mutex_watchdogMode);
@@ -309,9 +336,23 @@ void Tasks::ReceiveFromMonTask(void *arg) {
                 msgRcv->CompareID(MESSAGE_ROBOT_GO_RIGHT) ||
                 msgRcv->CompareID(MESSAGE_ROBOT_STOP)) {
 
+            cout << "Recieved move request";
             rt_mutex_acquire(&mutex_move, TM_INFINITE);
             move = msgRcv->GetID();
             rt_mutex_release(&mutex_move);
+        }
+        
+        //ALL MESSAGES ARE RECIEVED AND TREATED [FUNCTION 3]
+        
+        else if (msgRcv->CompareID(MESSAGE_ROBOT_COM_CLOSE)){
+        //CLOSING COMMUNICATION WITH ROBOT
+        cout << "Requesting closing of communication with Robot";
+        rt_mutex_acquire(&mutex_robot, TM_INFINITE);
+        status = robot.Close();
+        rt_mutex_release(&mutex_robot);
+        }
+        else {
+            cout << "Request unknown";
         }
         
 
@@ -346,8 +387,11 @@ void Tasks::OpenComRobot(void *arg) {
         Message * msgSend;
         if (status < 0) {
             msgSend = new Message(MESSAGE_ANSWER_NACK);
+            cout << "Connection to Robot unsuccessful";;
+
         } else {
             msgSend = new Message(MESSAGE_ANSWER_ACK);
+            cout << "Connection to Robot successful";
         }
         WriteInQueue(&q_messageToMon, msgSend); // msgSend will be deleted by sendToMon
     }
