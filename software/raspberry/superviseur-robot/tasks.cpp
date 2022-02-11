@@ -505,7 +505,7 @@ void Tasks::WatchdogReload(void *arg) {
     //We wait until the watchdog mode is activated to execute this code
     rt_sem_p(&sem_watchdogReload, TM_INFINITE);
     
-    rt_task_set_periodic(NULL, TM_NOW, 100000000);
+    rt_task_set_periodic(NULL, TM_NOW, 1000000000);
 
     /**************************************************************************************/
     /* The task starts here                                                               */
