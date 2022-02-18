@@ -68,6 +68,10 @@ private:
     int watchdogMode = 0; //variable indiquant si le mode watchdog est ativé ou non par l'utilisateur
     int move = MESSAGE_ROBOT_STOP;
     
+    //[FUNCTION 8]
+    Message * robotResponse;
+    int robotErrors = 0;
+    
     /**********************************************************************/
     /* Tasks                                                              */
     /**********************************************************************/
@@ -88,6 +92,8 @@ private:
     RT_MUTEX mutex_robotStarted;
     RT_MUTEX mutex_watchdogMode; //mutex pour la variable watchdogStarted
     RT_MUTEX mutex_move;
+    RT_MUTEX mutex_robotErrors; //mutex pour la variable watchdogStarted
+
 
     /**********************************************************************/
     /* Semaphores                                                         */
@@ -147,6 +153,11 @@ private:
     * @brief 
     */
     void WatchdogReload(void *arg) ; 
+    
+        /**
+    * @brief 
+    */
+    void RobotErrorsHandling(void *arg) ; 
     
     
     /**********************************************************************/
