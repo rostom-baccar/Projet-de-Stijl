@@ -83,6 +83,10 @@ void Tasks::Init() {
         cerr << "Error mutex create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
+        if (err = rt_mutex_create(&mutex_com_robot, NULL)) {
+        cerr << "Error mutex create: " << strerror(-err) << endl << flush;
+        exit(EXIT_FAILURE);
+    }
     cout << "Mutexes created successfully" << endl << flush;
 
     /**************************************************************************************/
@@ -205,8 +209,18 @@ void Tasks::Run() {
  * @brief Arrêt des tâches
  */
 void Tasks::Stop() {
+
+    rt_mutex_acquire(&mutex_monitor, TM_INFINITE);
     monitor.Close();
+    rt_mutex_acquire(&mutex_monitor);
+
+    rt_mutex_acquire(&mutex_robot, TM_INFINITE);
     robot.Close();
+    rt_mutex_release(&mutex_robot);
+
+    rt_mutex_acquire(&mutex_com_robot, TM_INFINITE);
+    comOK = false;
+    rt_mutex_release(&mutex_com_robot);
 }
 
 /**
@@ -316,6 +330,13 @@ void Tasks::ReceiveFromMonTask(void *arg) {
             rt_mutex_acquire(&mutex_robot, TM_INFINITE);
             robotResponse = robot.Write(robot.PowerOff());
             robot.Close();
+            rt_mutex_release(&mutex_robot);
+
+            rt_mutex_acquire(&mutex_com_robot, TM_INFINITE);
+            comOK = false;
+            rt_mutex_release(&mutex_com_robot);
+
+
             //ROBOT ERRORS HANDLING
             if ((robotResponse->CompareID(MESSAGE_ANSWER_ROBOT_ERROR)) || 
                     (robotResponse->CompareID(MESSAGE_ANSWER_ROBOT_ERROR))) {
@@ -328,7 +349,6 @@ void Tasks::ReceiveFromMonTask(void *arg) {
                 robotErrors=0;
                 rt_mutex_release(&mutex_robotErrors);
             }
-            rt_mutex_release(&mutex_robot);
             
             //ROBOT STARTED VARIABLE UPDATE [FUNCTION 6]
             rt_mutex_acquire(&mutex_robotStarted, TM_INFINITE);
@@ -399,10 +419,6 @@ void Tasks::ReceiveFromMonTask(void *arg) {
                     robotErrors=0;
                     rt_mutex_release(&mutex_robotErrors);
                 }
-
-                
-
-
             }
         }
         
@@ -427,21 +443,22 @@ void Tasks::ReceiveFromMonTask(void *arg) {
         rt_mutex_acquire(&mutex_robot, TM_INFINITE);
         status = robot.Close();
         rt_mutex_release(&mutex_robot);
+
+        rt_mutex_acquire(&mutex_com_robot, TM_INFINITE);
+        comOK = false;
+        rt_mutex_release(&mutex_com_robot);
+
         
         //ROBOT ERRORS RESET
         rt_mutex_acquire(&mutex_robotErrors, TM_INFINITE);
         robotErrors=0;
         rt_mutex_release(&mutex_robotErrors);
-        
-            
         }
         
         else if (msgRcv->CompareID(MESSAGE_ANSWER_ROBOT_UNKNOWN_COMMAND)){
             cout << "Request unknown";
         }
-        
 
-        
         delete(msgRcv); // mus be deleted manually, no consumer
     }
 }
@@ -477,6 +494,7 @@ void Tasks::OpenComRobot(void *arg) {
         } else {
             msgSend = new Message(MESSAGE_ANSWER_ACK);
             cout << "Connection to Robot successful";
+            comOK = true; //COMM WITH ROBOT ESTABLISHED SUCCESSFULLY
         }
         WriteInQueue(&q_messageToMon, msgSend); // msgSend will be deleted by sendToMon
     }
@@ -498,71 +516,80 @@ void Tasks::StartRobotTask(void *arg) {
 
         Message * msgSend;
         rt_sem_p(&sem_startRobot, TM_INFINITE);
-        
         int wm; //watchdog
-        rt_mutex_acquire(&mutex_watchdogMode, TM_INFINITE);
-        wm = watchdogMode; //selon le msg réceptionné depuis le moniteur
-        rt_mutex_release(&mutex_watchdogMode);
+        bool comRobotOK=false;
 
-        cout << "Watchdog Mode = " << wm;
-        
-        if (wm==0){
-        
-        cout << "Start robot without watchdog (";
-        rt_mutex_acquire(&mutex_robot, TM_INFINITE);
-        msgSend = robot.Write(robot.StartWithoutWD());
-        rt_mutex_release(&mutex_robot);
+        //WE MAKE SURE THE COMMUNICATION WITH THE ROBOT IS ESTABLISHED BEFORE STARTING THE ROBOT
+        rt_mutex_acquire(&mutex_com_robot, TM_INFINITE);
+        comRobotOK=comOK;
+        rt_mutex_release(&mutex_com_robot);
 
-        
-        //ROBOT ERRORS HANDLING
-        if (!msgSend->CompareID(MESSAGE_ANSWER_ACK))  {
-            rt_mutex_acquire(&mutex_robotErrors, TM_INFINITE);
-            robotErrors++;
-            rt_mutex_release(&mutex_robotErrors);
-        }
-        else {
-            rt_mutex_acquire(&mutex_robotErrors, TM_INFINITE);
-            robotErrors=0;
-            rt_mutex_release(&mutex_robotErrors);
-        }
-        
-        }
-        else if (wm==1){
-        
-        cout << "Start robot with watchdog (";
-        rt_mutex_acquire(&mutex_robot, TM_INFINITE);
-        msgSend = robot.Write(robot.StartWithWD());
-        rt_mutex_release(&mutex_robot);
+        if (comRobotOK) {
 
-        //ROBOT ERRORS HANDLING
-        if (!msgSend->CompareID(MESSAGE_ANSWER_ACK))  {
-            rt_mutex_acquire(&mutex_robotErrors, TM_INFINITE);
-            robotErrors++;
-            rt_mutex_release(&mutex_robotErrors);
-        }
-        else {
-            rt_mutex_acquire(&mutex_robotErrors, TM_INFINITE);
-            robotErrors=0;
-            rt_mutex_release(&mutex_robotErrors);
-        }
-        
-        //The watchdog reload semaphore is released here, the watchdog reload task can be executed
-        rt_sem_v(&sem_watchdogReload);
-            
-        }
-        
-        
-        cout << msgSend->GetID();
-        cout << ")" << endl;
+            rt_mutex_acquire(&mutex_watchdogMode, TM_INFINITE);
+            wm = watchdogMode; //selon le msg réceptionné depuis le moniteur
+            rt_mutex_release(&mutex_watchdogMode);
 
-        cout << "Movement answer: " << msgSend->ToString() << endl << flush;
-        WriteInQueue(&q_messageToMon, msgSend);  // msgSend will be deleted by sendToMon
+            cout << "Watchdog Mode Selected = " << wm;
+        
+            if (wm==0){
+        
+                cout << "Start robot without watchdog (";
+                rt_mutex_acquire(&mutex_robot, TM_INFINITE);
+                msgSend = robot.Write(robot.StartWithoutWD());
+                rt_mutex_release(&mutex_robot);
+ 
+                //ROBOT ERRORS HANDLING
+                if (!msgSend->CompareID(MESSAGE_ANSWER_ACK))  {
+                    rt_mutex_acquire(&mutex_robotErrors, TM_INFINITE);
+                    robotErrors++;
+                    rt_mutex_release(&mutex_robotErrors);
+                }
+                else {
+                    rt_mutex_acquire(&mutex_robotErrors, TM_INFINITE);
+                    robotErrors=0;
+                    rt_mutex_release(&mutex_robotErrors);
+                }
+        
+            }
+            else if (wm==1){
+        
+                cout << "Start robot with watchdog (";
 
-        if (msgSend->GetID() == MESSAGE_ANSWER_ACK) {
-            rt_mutex_acquire(&mutex_robotStarted, TM_INFINITE);
-            robotStarted = 1;
-            rt_mutex_release(&mutex_robotStarted);
+                rt_mutex_acquire(&mutex_robot, TM_INFINITE);
+                msgSend = robot.Write(robot.StartWithWD());
+                rt_mutex_release(&mutex_robot);
+
+                //ROBOT ERRORS HANDLING
+                if (!msgSend->CompareID(MESSAGE_ANSWER_ACK))  {
+                    rt_mutex_acquire(&mutex_robotErrors, TM_INFINITE);
+                    robotErrors++;
+                    rt_mutex_release(&mutex_robotErrors);
+                }
+                else {
+                    rt_mutex_acquire(&mutex_robotErrors, TM_INFINITE);
+                    robotErrors=0;
+                    rt_mutex_release(&mutex_robotErrors);
+                }
+        
+                //The watchdog reload semaphore is released here, the watchdog reload task can be executed
+            rt_sem_v(&sem_watchdogReload);   
+            }
+        
+        
+            cout << msgSend->GetID();
+            cout << ")" << endl;
+
+            cout << "Movement answer: " << msgSend->ToString() << endl << flush;
+            WriteInQueue(&q_messageToMon, msgSend);  // msgSend will be deleted by sendToMon
+
+            if (msgSend->GetID() == MESSAGE_ANSWER_ACK) {
+                rt_mutex_acquire(&mutex_robotStarted, TM_INFINITE);
+                robotStarted = 1;
+                rt_mutex_release(&mutex_robotStarted);
+            }
         }
+        else cout << "Robot cannot be started: communication not established";
     }
 }
 
@@ -744,6 +771,10 @@ void Tasks::RobotErrorsHandling(void *arg) {
                 rt_mutex_acquire(&mutex_robot, TM_INFINITE);
                 int status = robot.Close();
                 rt_mutex_release(&mutex_robot);
+
+                rt_mutex_acquire(&mutex_com_robot, TM_INFINITE);
+                comOK = false;
+                rt_mutex_release(&mutex_com_robot);
             
             }
         }

@@ -71,6 +71,8 @@ private:
     //[FUNCTION 8]
     Message * robotResponse;
     int robotErrors = 0;
+
+    bool comOK = false; //BECOMES TRUE IF THE COMMUNICATION WITH THE ROBOT IS SUCCESSFULLY ESTABLISHED
     
     /**********************************************************************/
     /* Tasks                                                              */
@@ -90,9 +92,10 @@ private:
     RT_MUTEX mutex_monitor;
     RT_MUTEX mutex_robot;
     RT_MUTEX mutex_robotStarted;
-    RT_MUTEX mutex_watchdogMode; //mutex pour la variable watchdogStarted
+    RT_MUTEX mutex_watchdogMode; 
     RT_MUTEX mutex_move;
-    RT_MUTEX mutex_robotErrors; //mutex pour la variable watchdogStarted
+    RT_MUTEX mutex_robotErrors;
+    RT_MUTEX mutex_com_robot;
 
 
     /**********************************************************************/
