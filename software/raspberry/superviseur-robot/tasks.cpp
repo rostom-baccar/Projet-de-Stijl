@@ -273,9 +273,6 @@ void Tasks::SendToMonTask(void* arg) {
     /* The task sendToMon starts here                                                     */
     /**************************************************************************************/
     rt_sem_p(&sem_serverOk, TM_INFINITE);
-    
-    //SEND TO MONITOR EVERY 10MS [FUNCTION 4]
-    rt_task_set_periodic(NULL, TM_NOW, 10000000);
 
     while (1) {
         cout << "wait msg to send" << endl << flush;
@@ -312,7 +309,7 @@ void Tasks::ReceiveFromMonTask(void *arg) {
         if (msgRcv->CompareID(MESSAGE_MONITOR_LOST)) {
             
             //CONNECTION WITH MONITOR IS LOST [FUNCTION 5 & 7]
-            cout << "Connection with monitor is lost";
+            cout << "Connection with monitor is lost" << endl << flush;
             
             //WE MAKE SURE THE ROBOT IS STARTED BEFORE STOPPING IT
             rt_mutex_acquire(&mutex_robotStarted, TM_INFINITE);
@@ -372,13 +369,13 @@ void Tasks::ReceiveFromMonTask(void *arg) {
         } else if (msgRcv->CompareID(MESSAGE_ROBOT_COM_OPEN)) {
             
             //[FUNCTION 7]
-            cout << "Communication with monitor OK";
-            cout << "Requesting communication with Robot";
+            cout << "Communication with monitor OK" << endl << flush;
+            cout << "Requesting communication with Robot" << endl << flush;
             
             rt_sem_v(&sem_openComRobot);            
             
         } else if (msgRcv->CompareID(MESSAGE_ROBOT_START_WITHOUT_WD)) {
-            cout << "Telling robot to start without watchdog";
+            cout << "Telling robot to start without watchdog" << endl << flush;
             rt_mutex_acquire(&mutex_watchdogMode, TM_INFINITE);
             watchdogMode = 0;
             rt_mutex_release(&mutex_watchdogMode);
@@ -387,7 +384,7 @@ void Tasks::ReceiveFromMonTask(void *arg) {
         //On rajoute la réception de message de démarrage avec watchdog
             
         } else if (msgRcv->CompareID(MESSAGE_ROBOT_START_WITH_WD)) {
-            cout << "Telling robot to start in watchdog mode";
+            cout << "Telling robot to start in watchdog mode" << endl << flush;
             rt_mutex_acquire(&mutex_watchdogMode, TM_INFINITE);
             watchdogMode = 1;
             rt_mutex_release(&mutex_watchdogMode);
@@ -428,7 +425,7 @@ void Tasks::ReceiveFromMonTask(void *arg) {
                 msgRcv->CompareID(MESSAGE_ROBOT_GO_RIGHT) ||
                 msgRcv->CompareID(MESSAGE_ROBOT_STOP)) {
 
-            cout << "Recieved move request";
+            cout << "Recieved move request" << endl << flush;
             rt_mutex_acquire(&mutex_move, TM_INFINITE);
             move = msgRcv->GetID();
             rt_mutex_release(&mutex_move);
@@ -439,7 +436,7 @@ void Tasks::ReceiveFromMonTask(void *arg) {
         else if (msgRcv->CompareID(MESSAGE_ROBOT_COM_CLOSE)){
             
         //CLOSING COMMUNICATION WITH ROBOT
-        cout << "Requesting closing of communication with Robot";
+        cout << "Requesting closing of communication with Robot" << endl << flush;
         rt_mutex_acquire(&mutex_robot, TM_INFINITE);
         status = robot.Close();
         rt_mutex_release(&mutex_robot);
@@ -456,7 +453,7 @@ void Tasks::ReceiveFromMonTask(void *arg) {
         }
         
         else if (msgRcv->CompareID(MESSAGE_ANSWER_ROBOT_UNKNOWN_COMMAND)){
-            cout << "Request unknown";
+            cout << "Request unknown" << endl << flush;
         }
 
         delete(msgRcv); // mus be deleted manually, no consumer
@@ -479,6 +476,7 @@ void Tasks::OpenComRobot(void *arg) {
     /**************************************************************************************/
     while (1) {
         rt_sem_p(&sem_openComRobot, TM_INFINITE);
+
         cout << "Open serial com (";
         rt_mutex_acquire(&mutex_robot, TM_INFINITE);
         status = robot.Open();
@@ -489,15 +487,18 @@ void Tasks::OpenComRobot(void *arg) {
         Message * msgSend;
         if (status < 0) {
             msgSend = new Message(MESSAGE_ANSWER_NACK);
-            cout << "Connection to Robot unsuccessful";;
+            cout << endl << flush;
+            cout << "Connection to Robot unsuccessful" << endl << flush;
 
         } else {
             msgSend = new Message(MESSAGE_ANSWER_ACK);
-            cout << "Connection to Robot successful";
+            cout << "Connection to Robot successful" << endl << flush;
             comOK = true; //COMM WITH ROBOT ESTABLISHED SUCCESSFULLY
         }
         WriteInQueue(&q_messageToMon, msgSend); // msgSend will be deleted by sendToMon
     }
+
+    
 }
 
 /**
@@ -530,11 +531,11 @@ void Tasks::StartRobotTask(void *arg) {
             wm = watchdogMode; //selon le msg réceptionné depuis le moniteur
             rt_mutex_release(&mutex_watchdogMode);
 
-            cout << "Watchdog Mode Selected = " << wm;
+            cout << "Watchdog Mode Selected = " << wm << endl << flush;
         
             if (wm==0){
         
-                cout << "Start robot without watchdog (";
+                cout << "Start robot without watchdog (" << endl << flush;
                 rt_mutex_acquire(&mutex_robot, TM_INFINITE);
                 msgSend = robot.Write(robot.StartWithoutWD());
                 rt_mutex_release(&mutex_robot);
@@ -554,7 +555,7 @@ void Tasks::StartRobotTask(void *arg) {
             }
             else if (wm==1){
         
-                cout << "Start robot with watchdog (";
+                cout << "Start robot with watchdog (" << endl << flush;
 
                 rt_mutex_acquire(&mutex_robot, TM_INFINITE);
                 msgSend = robot.Write(robot.StartWithWD());
@@ -589,7 +590,7 @@ void Tasks::StartRobotTask(void *arg) {
                 rt_mutex_release(&mutex_robotStarted);
             }
         }
-        else cout << "Robot cannot be started: communication not established";
+        else cout << "Robot cannot be started: communication not established" << endl << flush;
     }
 }
 
@@ -611,7 +612,7 @@ void Tasks::MoveTask(void *arg) {
 
     while (1) {
         rt_task_wait_period(NULL);
-        cout << "Periodic movement update";
+        cout << "Periodic movement update" << endl << flush;
         rt_mutex_acquire(&mutex_robotStarted, TM_INFINITE);
         rs = robotStarted;
         rt_mutex_release(&mutex_robotStarted);
@@ -665,7 +666,7 @@ void Tasks::CheckBattery(void *arg) {
     while (1) {
         // Wait period
         rt_task_wait_period(NULL);
-        cout << "Battery check" << endl;
+        cout << "Battery check" << endl << flush;
         
         // Lock mutex
         rt_mutex_acquire(&mutex_robotStarted, TM_INFINITE);
@@ -708,6 +709,7 @@ void Tasks::WatchdogReload(void *arg) {
     while(1){
         
         rt_task_wait_period(NULL);
+        rt_sem_p(&sem_watchdogReload); 
         
         rt_mutex_acquire(&mutex_robotStarted, TM_INFINITE);
         rs = robotStarted;
