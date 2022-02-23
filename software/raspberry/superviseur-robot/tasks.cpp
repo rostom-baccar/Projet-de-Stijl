@@ -212,7 +212,7 @@ void Tasks::Stop() {
 
     rt_mutex_acquire(&mutex_monitor, TM_INFINITE);
     monitor.Close();
-    rt_mutex_acquire(&mutex_monitor);
+    rt_mutex_release(&mutex_monitor);
 
     rt_mutex_acquire(&mutex_robot, TM_INFINITE);
     robot.Close();
